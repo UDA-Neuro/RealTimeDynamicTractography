@@ -1,9 +1,10 @@
 /* Dependency-free 3D scene: WebGL cortex, canvas tract/electrode glow. */
 const $ = id => document.getElementById(id);
 const brainCanvas = $('brain'), overlay = $('overlay'), ctx = overlay.getContext('2d');
-const gl = brainCanvas.getContext('webgl', {alpha:true, antialias:true});
+const gl = brainCanvas.getContext('webgl', {alpha:true, antialias:true, preserveDrawingBuffer:true});
 const state = {scene:null, yaw:-0.52, pitch:0.17, zoom:1, playing:false, time:0,
-  min:0, max:1, selected:null, lastFrame:0, center:[0,0,0], extent:1};
+  min:0, max:1, selectedRoute:null, selectedCluster:null, recording:null,
+  lastFrame:0, center:[0,0,0], extent:1};
 
 function shader(type, source){const s=gl.createShader(type);gl.shaderSource(s,source);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(s));return s}
 let program, positionBuffer, normalBuffer, vertexCount=0;
@@ -39,44 +40,80 @@ function renderBrain(){if(!gl)return;gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BU
 }
 function path(points,color,width,glow){if(!points||points.length<2)return;let projected=points.map(project);ctx.beginPath();ctx.moveTo(projected[0][0],projected[0][1]);for(const p of projected.slice(1))ctx.lineTo(p[0],p[1]);ctx.strokeStyle=color;ctx.lineWidth=width;ctx.lineCap='round';ctx.lineJoin='round';ctx.shadowColor=color;ctx.shadowBlur=glow;ctx.stroke();ctx.shadowBlur=0}
 function dot(x,y,r,color,glow){ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fillStyle=color;ctx.shadowColor=color;ctx.shadowBlur=glow;ctx.fill();ctx.shadowBlur=0}
+function visibleRoutes(){const routes=state.scene?.propagations||[];return state.selectedCluster?routes.filter(r=>r.cluster_id===state.selectedCluster):routes}
+function visibleEvents(){const events=state.scene?.events||[];return state.selectedCluster?events.filter(e=>e.cluster_id===state.selectedCluster):events}
 function drawOverlay(){ctx.clearRect(0,0,overlay.width,overlay.height);const scene=state.scene;if(!scene)return;const scale=Math.min(overlay.width,overlay.height)/700;
-  if($('show-tracts').checked){let stride=Math.max(1,Math.ceil(scene.tracts.length/340));for(let i=0;i<scene.tracts.length;i+=stride)path(scene.tracts[i],'rgba(80,210,208,.15)',.7*scale,0)}
+  if($('show-tracts').checked){let routes=visibleRoutes();let stride=Math.max(1,Math.ceil(routes.length/340));for(let i=0;i<routes.length;i+=stride)path(routes[i].path,'rgba(80,210,208,.22)',.9*scale,0)}
   for(const lead of scene.depth_electrodes||[]){
     path(lead.path,'rgba(199,225,231,.62)',2.1*scale,8*scale);
     const [x,y]=project(lead.path[0]);ctx.font=`600 ${Math.max(10,12*scale)}px DM Sans,Arial`;
     ctx.fillStyle='#b6d5db';ctx.shadowColor='#83dcd8';ctx.shadowBlur=7*scale;
     ctx.fillText(lead.name,x+8*scale,y-6*scale);ctx.shadowBlur=0;
   }
-  let candidates=scene.propagations.filter(r=>r.start_s-.08<=state.time&&r.end_s+.13>=state.time);if(state.selected!=null){let selected=scene.propagations[state.selected];if(selected&&!candidates.includes(selected))candidates.unshift(selected)}
+  let candidates=visibleRoutes().filter(r=>r.start_s-.04<=state.time&&r.end_s+.13>=state.time);if(state.selectedRoute!=null){let selected=visibleRoutes().find(r=>r.track_id===state.selectedRoute);if(selected&&!candidates.includes(selected))candidates.unshift(selected)}
   for(const r of candidates.slice(0,12)){let color=r.kind==='Spike'?'#ff5ea8':r.kind==='HFO'?'#ffbd70':'#96a5ff';path(r.path,color,3*scale,16*scale);
     let fraction=Math.max(0,Math.min(1,(state.time-r.start_s)/(r.end_s-r.start_s||.001)));let index=Math.min(r.path.length-1,Math.floor(fraction*(r.path.length-1)));let pt=project(r.path[index]);dot(pt[0],pt[1],5*scale,color,24*scale)}
-  let active=new Map();for(const ev of scene.events){if(Math.abs(ev.peak_s-state.time)<.09){if(ev.kind==='Spike'&&!$('show-spike').checked)continue;if(ev.kind==='HFO'&&!$('show-hfo').checked)continue;active.set(ev.channel,ev.kind)}}
+  let active=new Map();for(const ev of visibleEvents()){if(state.time>=ev.peak_s&&state.time<ev.peak_s+.12){if(ev.kind==='Spike'&&!$('show-spike').checked)continue;if(ev.kind==='HFO'&&!$('show-hfo').checked)continue;active.set(ev.channel,ev.kind)}}
   let sorted=[...scene.electrodes].sort((a,b)=>project(a.xyz)[2]-project(b.xyz)[2]);for(const e of sorted){let [x,y]=project(e.xyz),kind=active.get(e.channel),color=kind==='Spike'?'#ff5ea8':kind==='HFO'?'#ffbd70':'#bcecea';
     const radius=e.contact_diameter_mm?Math.max(1.4,(e.contact_diameter_mm/2)*Math.min(overlay.width,overlay.height)*.47*state.zoom/state.extent):3.5*scale;
     dot(x,y,radius,color,kind?30*scale:7*scale);
     if(kind){ctx.beginPath();ctx.arc(x,y,radius+4*scale,0,Math.PI*2);ctx.strokeStyle=color;ctx.lineWidth=1.3*scale;ctx.stroke();ctx.font=`${Math.max(10,11*scale)}px DM Sans,Arial`;ctx.fillStyle='#e7f7f7';ctx.fillText(e.label,x+11*scale,y-10*scale)}}
 }
 function formatTime(seconds){let m=Math.floor(seconds/60),s=Math.floor(seconds%60),ms=Math.floor((seconds%1)*1000);return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}.${String(ms).padStart(3,'0')}`}
-function updateUi(){const scene=state.scene;if(!scene)return;$('current-time').textContent=formatTime(state.time);$('timeline').value=state.time;$('play').textContent=state.playing?'Ⅱ':'▶';let cards=document.querySelectorAll('.candidate');cards.forEach((c,i)=>c.classList.toggle('active',i===state.selected))}
-function frame(ts){if(state.playing&&state.lastFrame){state.time+=Math.min((ts-state.lastFrame)/1000,.1)*Number($('speed').value);
-    if(state.scene?.demo){const next=state.scene.events.find(e=>e.peak_s>state.time+.35);const soon=state.scene.events.some(e=>e.peak_s>=state.time&&e.peak_s<=state.time+.35);if(!soon&&next)state.time=next.peak_s-.16}
-    if(state.time>=state.max){state.time=state.min;state.playing=false}}state.lastFrame=ts;renderBrain();drawOverlay();updateUi();requestAnimationFrame(frame)}
-function setupUi(){let scene=state.scene;const times=scene.events.map(e=>e.peak_s);let first=times.length?Math.min(...times):0,last=times.length?Math.max(...times):1;state.min=scene.demo?Math.max(0,first-.18):Math.min(first,0);state.max=scene.demo?last+.2:Math.max(last,1);if(state.max-state.min<.2)state.max=state.min+1;state.time=state.min;
-  $('source-label').textContent=scene.source_label;$('event-count').textContent=scene.events.length;$('route-count').textContent=scene.propagations.length;$('electrode-count').textContent=scene.electrodes.length;$('lead-count').textContent=(scene.depth_electrodes||[]).length||'—';
-  if(scene.demo)$('speed').value='0.1';
-  $('window-label').textContent=`${scene.settings.min_delay_ms}–${scene.settings.max_delay_ms} MS`;$('timeline').min=state.min;$('timeline').max=state.max;$('range-label').textContent=`${formatTime(state.min)}  —  ${formatTime(state.max)}`;
-  $('ticks').innerHTML=scene.events.slice(0,500).map(e=>`<i class="tick ${e.kind==='HFO'?'hfo':''}" style="left:${100*(e.peak_s-state.min)/(state.max-state.min)}%"></i>`).join('');
-  const eById=new Map(scene.events.map(e=>[e.id,e]));let container=$('candidates');if(!scene.propagations.length){container.innerHTML='<div class="empty">No pathway candidates in the current time and tract settings.</div>'}else{
-    scene.propagations.slice(0,80).forEach((r,i)=>{let a=scene.electrodes.find(e=>e.channel_number===r.source_channel),b=scene.electrodes.find(e=>e.channel_number===r.target_channel);let card=document.createElement('button');card.className='candidate';
-      const top=document.createElement('div');top.className='candidate-top';let kind=document.createElement('b');kind.className=r.kind;kind.textContent=r.kind.toUpperCase();let delay=document.createElement('span');delay.textContent=`${r.delay_ms} ms`;top.append(kind,delay);
-      let route=document.createElement('div');route.className='candidate-route';route.textContent=a?.label||String(r.source_channel);let arrow=document.createElement('span');arrow.textContent='→';route.append(arrow,document.createTextNode(b?.label||String(r.target_channel)));
-      let bottom=document.createElement('div');bottom.className='candidate-bottom';bottom.textContent=`${formatTime(r.start_s)}  ·  ${r.length_mm} mm tract segment`;
-      card.append(top,route,bottom);card.onclick=()=>{state.selected=i;state.time=r.start_s;state.playing=false};container.append(card)})}
-  $('play').onclick=()=>{if(state.time>=state.max)state.time=state.min;state.playing=!state.playing};$('timeline').oninput=e=>{state.time=Number(e.target.value);state.playing=false};$('reset-view').onclick=()=>{state.yaw=-.52;state.pitch=.17;state.zoom=1};
+function updateUi(){if(!state.scene)return;$('current-time').textContent=formatTime(state.time);$('timeline').value=state.time;$('play').textContent=state.playing?'Ⅱ':'▶';
+  document.querySelectorAll('.candidate').forEach(c=>c.classList.toggle('active',Number(c.dataset.trackId)===state.selectedRoute));
+  document.querySelectorAll('.cluster').forEach(c=>c.classList.toggle('active',c.dataset.clusterId===state.selectedCluster));
+}
+function composeVideo(){const rec=state.recording;if(!rec)return;const c=rec.context,w=rec.canvas.width,h=rec.canvas.height;
+  c.fillStyle='#081018';c.fillRect(0,0,w,h);c.drawImage(brainCanvas,0,0,w,h);c.drawImage(overlay,0,0,w,h);
+  c.fillStyle='#e5f8f7';c.font=`700 ${Math.max(16,w*.018)}px Arial`;c.fillText('DYNAMIC TRACTOGRAPHY',28,42);
+  c.fillStyle='#75dcd4';c.font=`600 ${Math.max(12,w*.014)}px Arial`;c.fillText(rec.title,28,68);
+  c.fillStyle='#e3f2f2';c.font=`${Math.max(12,w*.014)}px Arial`;c.fillText(formatTime(state.time),28,h-24);
+}
+function frame(ts){if(state.recording){state.time=Math.min(state.max,state.min+(ts-state.recording.started)/10000)}
+  else if(state.playing&&state.lastFrame){state.time+=Math.min((ts-state.lastFrame)/1000,.1)*Number($('speed').value);
+    if(state.time>=state.max){state.time=state.min;if(!state.selectedCluster)state.playing=false}}
+  state.lastFrame=ts;renderBrain();drawOverlay();updateUi();composeVideo();
+  if(state.recording&&state.time>=state.max&&!state.recording.finished){state.recording.finished=true;state.recording.recorder.stop()}
+  requestAnimationFrame(frame)
+}
+function renderCandidates(){const container=$('candidates');container.replaceChildren();const routes=visibleRoutes();
+  if(!routes.length){let empty=document.createElement('div');empty.className='empty';empty.textContent='No pathway candidates in this selection.';container.append(empty);return}
+  const contacts=new Map(state.scene.electrodes.map(e=>[e.channel_number,e]));
+  for(const r of routes.slice(0,80)){let a=contacts.get(r.source_channel),b=contacts.get(r.target_channel);let card=document.createElement('button');card.className='candidate';card.dataset.trackId=String(r.track_id);
+    let top=document.createElement('div');top.className='candidate-top';let kind=document.createElement('b');kind.className=r.kind;kind.textContent=r.kind.toUpperCase();let delay=document.createElement('span');delay.textContent=`${r.delay_ms} ms`;top.append(kind,delay);
+    let route=document.createElement('div');route.className='candidate-route';route.textContent=a?.label||String(r.source_channel);let arrow=document.createElement('span');arrow.textContent='→';route.append(arrow,document.createTextNode(b?.label||String(r.target_channel)));
+    let bottom=document.createElement('div');bottom.className='candidate-bottom';bottom.textContent=r.route_label||`${formatTime(r.start_s)}  ·  ${r.length_mm} mm`;
+    card.append(top,route,bottom);card.onclick=()=>{state.selectedRoute=r.track_id;state.time=r.start_s-.03;state.playing=true};container.append(card)
+  }
+}
+function selectCluster(id){if(state.recording)return;state.selectedCluster=id;state.selectedRoute=null;state.playing=false;const times=visibleEvents().map(e=>e.peak_s);
+  let first=times.length?times.reduce((a,b)=>Math.min(a,b),Infinity):0,last=times.length?times.reduce((a,b)=>Math.max(a,b),-Infinity):1;
+  state.min=id?Math.max(0,first-.06):Math.min(first,0);state.max=id?last+.12:Math.max(last,1);if(state.max-state.min<.2)state.max=state.min+.2;state.time=state.min;
+  $('timeline').min=state.min;$('timeline').max=state.max;$('range-label').textContent=`${formatTime(state.min)}  —  ${formatTime(state.max)}`;
+  $('ticks').innerHTML=visibleEvents().slice(0,500).map(e=>`<i class="tick ${e.kind==='HFO'?'hfo':''}" style="left:${100*(e.peak_s-state.min)/(state.max-state.min)}%"></i>`).join('');
+  $('event-count').textContent=visibleEvents().length;$('route-count').textContent=visibleRoutes().length;renderCandidates();updateUi()
+}
+function saveClusterVideo(){if(!state.selectedCluster||!window.MediaRecorder||!HTMLCanvasElement.prototype.captureStream)return;
+  const button=$('export-video');button.disabled=true;button.textContent='RECORDING VIDEO…';state.playing=false;state.time=state.min;
+  const canvas=document.createElement('canvas');canvas.width=overlay.width;canvas.height=overlay.height;
+  const stream=canvas.captureStream(30);const chunks=[];const mime=MediaRecorder.isTypeSupported('video/webm;codecs=vp9')?'video/webm;codecs=vp9':'video/webm';
+  let recorder;try{recorder=new MediaRecorder(stream,{mimeType:mime})}catch(err){button.disabled=false;button.textContent='VIDEO EXPORT UNAVAILABLE';stream.getTracks().forEach(t=>t.stop());return}
+  recorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};
+  recorder.onstop=()=>{const blob=new Blob(chunks,{type:'video/webm'});const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download=`dynamic-tractography-${state.selectedCluster}.webm`;link.click();setTimeout(()=>URL.revokeObjectURL(url),30000);stream.getTracks().forEach(t=>t.stop());state.recording=null;button.disabled=false;button.textContent='↓   SAVE CLUSTER VIDEO';state.time=state.min};
+  const cluster=state.scene.clusters.find(c=>c.id===state.selectedCluster);state.recording={canvas,context:canvas.getContext('2d'),recorder,started:performance.now(),title:cluster.title,finished:false};recorder.start(100)
+}
+function setupUi(){const scene=state.scene;$('source-label').textContent=scene.source_label;$('electrode-count').textContent=scene.electrodes.length;$('lead-count').textContent=(scene.depth_electrodes||[]).length||'—';
+  $('window-label').textContent=`${scene.settings.min_delay_ms}–${scene.settings.max_delay_ms} MS`;if(scene.demo)$('speed').value='0.1';
+  if(scene.demo)document.querySelector('.method-note').textContent='Demo fibers are schematic. Each cluster shows one origin event with five direct target events.';
+  if(scene.clusters?.length){$('cluster-section').hidden=false;const holder=$('clusters');for(const cluster of scene.clusters){const button=document.createElement('button');button.className='cluster';button.dataset.clusterId=cluster.id;button.textContent=cluster.title;const detail=document.createElement('small');detail.textContent=`${cluster.source_label} → 5 targets`;button.append(detail);button.onclick=()=>selectCluster(cluster.id);holder.append(button)}selectCluster(scene.clusters[0].id)}else selectCluster(null);
+  $('export-video').onclick=saveClusterVideo;$('play').onclick=()=>{if(state.time>=state.max)state.time=state.min;state.playing=!state.playing};$('timeline').oninput=e=>{state.time=Number(e.target.value);state.playing=false};$('reset-view').onclick=()=>{state.yaw=-.52;state.pitch=.17;state.zoom=1};
 }
 let dragging=false,lastX=0,lastY=0;overlay.addEventListener('pointerdown',e=>{dragging=true;lastX=e.clientX;lastY=e.clientY;overlay.setPointerCapture(e.pointerId)});overlay.addEventListener('pointermove',e=>{if(!dragging)return;state.yaw+=(e.clientX-lastX)*.008;state.pitch=Math.max(-1.35,Math.min(1.35,state.pitch+(e.clientY-lastY)*.008));lastX=e.clientX;lastY=e.clientY});overlay.addEventListener('pointerup',()=>dragging=false);overlay.addEventListener('wheel',e=>{e.preventDefault();state.zoom=Math.max(.55,Math.min(2.8,state.zoom*Math.exp(-e.deltaY*.001)))},{passive:false});
 window.addEventListener('resize',resize);
 fetch('/scene.json').then(r=>{if(!r.ok)throw Error(`Scene request failed: ${r.status}`);return r.json()}).then(scene=>{state.scene=scene;measureScene();buildBrain();setupUi();resize();requestAnimationFrame(frame)}).catch(err=>{$('candidates').textContent=err.message;console.error(err)});
+
+
 
 
 

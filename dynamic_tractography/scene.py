@@ -121,8 +121,14 @@ def find_propagations(events: list[dict], electrodes: list[dict], tracts: list[l
     route_cache = {}
     result = []
     ordered = sorted(events, key=lambda e: e["peak_s"])
+    consumed = set()
     for i, source in enumerate(ordered):
+        if source["id"] in consumed:
+            continue
+        consumed.add(source["id"])
         for target in ordered[i + 1:]:
+            if target["id"] in consumed:
+                continue
             delay_ms = (target["peak_s"] - source["peak_s"]) * 1000
             if delay_ms > max_delay_ms:
                 break
@@ -135,7 +141,9 @@ def find_propagations(events: list[dict], electrodes: list[dict], tracts: list[l
                 route_cache[pair] = route_for_pair(positions[pair[0]], positions[pair[1]], arrays, radius_mm)
             route = route_cache[pair]
             if route:
+                consumed.add(target["id"])
                 result.append({"source_id": source["id"], "target_id": target["id"],
+                               "cluster_id": f"cluster-{source['id']}",
                                "kind": source["kind"] if source["kind"] == target["kind"] else "mixed",
                                "start_s": source["peak_s"], "end_s": target["peak_s"],
                                "delay_ms": round(delay_ms, 2), "source_channel": pair[0],
@@ -160,4 +168,6 @@ def build_scene(subject_dir: Path | None, electrodes_path: Path, spike_path: Pat
             "events": events, "propagations": propagations,
             "settings": {"min_delay_ms": min_delay_ms, "max_delay_ms": max_delay_ms,
                          "radius_mm": radius_mm, "cross_type": cross_type}}
+
+
 
