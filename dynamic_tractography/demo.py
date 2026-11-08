@@ -112,7 +112,7 @@ def demo_scene() -> dict:
 
     propagations = find_propagations(events, electrodes, tracts, 10, 50, 8)
     return {"title": "DYNAMIC TRACTOGRAPHY",
-            "source_label": "FSAVERAGE5 STANDARD BRAIN",
+            "source_label": "FSAVERAGE5 · DEMO FIBERS",
             "surfaces": surfaces, "electrodes": electrodes,
             "depth_electrodes": depth_electrodes, "tracts": tracts,
             "events": events, "propagations": propagations,
