@@ -1,67 +1,125 @@
-"""Synthetic anatomy and events for previewing the viewer without patient data."""
+"""Demo on the FreeSurfer fsaverage5 standard brain."""
 
 from __future__ import annotations
 
-import math
 import numpy as np
+import nibabel as nib
 
 from .scene import find_propagations
 
 
-def demo_scene() -> dict:
+CONTACT_DIAMETER_MM = 2.0
+CONTACT_GAP_MM = 3.5
+CONTACT_PITCH_MM = CONTACT_DIAMETER_MM + CONTACT_GAP_MM
+CONTACTS_PER_LEAD = 8
+
+
+def _standard_surfaces() -> tuple[list[dict], dict[str, np.ndarray]]:
+    from nilearn.datasets import fetch_surf_fsaverage
+
+    atlas = fetch_surf_fsaverage("fsaverage5")
     surfaces = []
-    n_lat, n_lon = 36, 54
-    for hemi, sign in (("lh", -1), ("rh", 1)):
-        vertices, faces = [], []
-        for i in range(n_lat + 1):
-            theta = math.pi * i / n_lat
-            for j in range(n_lon):
-                phi = 2 * math.pi * j / n_lon
-                fold = 1 + .045 * math.sin(12 * theta + 5 * phi) * math.sin(9 * phi - 3 * theta)
-                x = sign * (38 + 37 * math.sin(theta) * math.cos(phi) * fold)
-                y = 68 * math.sin(theta) * math.sin(phi) * fold
-                z = 60 * math.cos(theta) * fold
-                vertices.append([x, y, z])
-        for i in range(n_lat):
-            for j in range(n_lon):
-                a = i * n_lon + j
-                b = i * n_lon + (j + 1) % n_lon
-                c = (i + 1) * n_lon + j
-                d = (i + 1) * n_lon + (j + 1) % n_lon
-                faces.extend(([a, b, c], [b, d, c]))
-        surfaces.append({"vertices": vertices, "faces": faces, "hemi": hemi})
-    electrodes = [
-        {"channel_number": 1, "label": "A1", "xyz": [-77, -25, 27]},
-        {"channel_number": 2, "label": "A2", "xyz": [-75, 4, 30]},
-        {"channel_number": 3, "label": "A3", "xyz": [-69, 32, 28]},
-        {"channel_number": 4, "label": "B1", "xyz": [78, -25, 24]},
-        {"channel_number": 5, "label": "B2", "xyz": [76, 7, 27]},
-        {"channel_number": 6, "label": "B3", "xyz": [69, 34, 25]},
-    ]
+    coordinates = {}
+    for hemi, key in (("lh", "pial_left"), ("rh", "pial_right")):
+        vertices, faces = nib.load(atlas[key]).agg_data()
+        coordinates[hemi] = np.asarray(vertices, dtype=float)
+        surfaces.append({"hemi": hemi,
+                         "vertices": np.round(vertices, 2).tolist(),
+                         "faces": np.asarray(faces, dtype=int).tolist()})
+    return surfaces, coordinates
+
+
+def _electrode_array(coordinates: dict[str, np.ndarray]) -> tuple[list[dict], list[dict]]:
+    electrodes = []
+    depth_electrodes = []
+    targets = [(-68, 20), (-36, 31), (-5, 38), (29, 31), (59, 17)]
+    for lead_index in range(10):
+        side = -1 if lead_index < 5 else 1
+        hemi = "lh" if side < 0 else "rh"
+        target_y, target_z = targets[lead_index % 5]
+        vertices = coordinates[hemi]
+        eligible = vertices[vertices[:, 0] * side > 30]
+        score = (eligible[:, 1] - target_y) ** 2 + 1.4 * (eligible[:, 2] - target_z) ** 2
+        score -= 9 * eligible[:, 0] * side
+        entry = eligible[int(np.argmin(score))].copy()
+        direction = np.array([-side, -entry[1] * .002, -entry[2] * .002], dtype=float)
+        direction /= np.linalg.norm(direction)
+        name = chr(ord("A") + lead_index)
+        contact_numbers = []
+        for contact_index in range(CONTACTS_PER_LEAD):
+            number = lead_index * CONTACTS_PER_LEAD + contact_index + 1
+            center = entry + direction * (4 + contact_index * CONTACT_PITCH_MM)
+            electrodes.append({"channel_number": number,
+                               "label": f"{name}{contact_index + 1}",
+                               "xyz": np.round(center, 2).tolist(),
+                               "lead": name, "contact_diameter_mm": CONTACT_DIAMETER_MM})
+            contact_numbers.append(number)
+        tip = entry + direction * (5 + (CONTACTS_PER_LEAD - 1) * CONTACT_PITCH_MM)
+        depth_electrodes.append({"name": name, "hemi": hemi,
+                                 "path": [np.round(entry - direction * 3, 2).tolist(),
+                                          np.round(tip, 2).tolist()],
+                                 "contacts": contact_numbers,
+                                 "contact_diameter_mm": CONTACT_DIAMETER_MM,
+                                 "contact_gap_mm": CONTACT_GAP_MM})
+    return electrodes, depth_electrodes
+
+
+def _fiber(a: np.ndarray, b: np.ndarray, side: int, bend: float = 14) -> list[list[float]]:
+    # An illustrative curve in the standard brain. This is not measured tractography.
+    points = []
+    for t in np.linspace(0, 1, 34):
+        p = (1 - t) * a + t * b
+        p = p + np.array([-side * bend, 0, -8]) * np.sin(np.pi * t)
+        points.append(np.round(p, 2).tolist())
+    return points
+
+
+def demo_scene() -> dict:
+    surfaces, coordinates = _standard_surfaces()
+    electrodes, depth_electrodes = _electrode_array(coordinates)
+    by_number = {e["channel_number"]: np.asarray(e["xyz"]) for e in electrodes}
     tracts = []
-    rng = np.random.default_rng(7)
-    for side in (-1, 1):
-        group = electrodes[:3] if side < 0 else electrodes[3:]
-        for k in range(90):
-            offset = rng.normal(0, 5, 3)
-            points = []
-            for t in np.linspace(0, 1, 30):
-                a = np.array(group[0]["xyz"])
-                b = np.array(group[2]["xyz"])
-                p = a * (1 - t) + b * t + offset * math.sin(math.pi * t)
-                p[0] -= side * (2 + k % 6) * math.sin(math.pi * t)
-                p[2] -= 3 * math.sin(math.pi * t)
-                points.append(np.round(p, 2).tolist())
-            tracts.append(points)
+    # Three nearby curves per inter-lead connection, all touching the two event contacts.
+    for first in (0, 5):
+        side = -1 if first == 0 else 1
+        for lead_index in range(first, first + 4):
+            a = by_number[lead_index * 8 + 5]
+            b = by_number[(lead_index + 1) * 8 + 5]
+            for bend in (11, 14, 17):
+                tracts.append(_fiber(a, b, side, bend))
+    # Add an along-lead path for each shaft, linking its contact centers.
+    for lead in depth_electrodes:
+        tracts.append([by_number[number].tolist() for number in lead["contacts"]])
+
     events = []
-    for base, kind, channels in ((2.5, "Spike", (1, 2, 3)), (5.1, "HFO", (4, 5, 6)),
-                                 (7.3, "Spike", (3, 2, 1))):
-        for i, channel in enumerate(channels):
-            events.append({"id": f"{kind}-{base}-{i}", "kind": kind,
-                           "channel": channel, "peak_s": round(base + i * .029, 3), "score": 8.5})
-    paths = find_propagations(events, electrodes, tracts, 10, 50, 8)
-    return {"title": "DYNAMIC TRACTOGRAPHY", "source_label": "SYNTHETIC DEMO",
-            "surfaces": surfaces, "electrodes": electrodes, "tracts": tracts,
-            "events": events, "propagations": paths,
-            "settings": {"min_delay_ms": 10, "max_delay_ms": 50, "radius_mm": 8, "cross_type": False}}
+    patterns = [
+        (2.0, "Spike", range(0, 5), 5, .032),
+        (5.0, "HFO", range(5, 10), 5, .029),
+        (8.0, "Spike", range(4, -1, -1), 5, .035),
+        (11.0, "HFO", range(9, 4, -1), 5, .031),
+    ]
+    for base, kind, leads, contact, step in patterns:
+        for index, lead_index in enumerate(leads):
+            number = lead_index * 8 + contact
+            events.append({"id": f"{kind}-{base}-{index}", "kind": kind,
+                           "channel": number, "peak_s": round(base + index * step, 3),
+                           "score": 8.5})
+    for base, kind, lead_index in ((14.0, "Spike", 0), (16.0, "HFO", 9)):
+        for index, contact in enumerate((2, 4, 6)):
+            events.append({"id": f"{kind}-{base}-{index}", "kind": kind,
+                           "channel": lead_index * 8 + contact,
+                           "peak_s": round(base + index * .028, 3), "score": 8.5})
+
+    propagations = find_propagations(events, electrodes, tracts, 10, 50, 8)
+    return {"title": "DYNAMIC TRACTOGRAPHY",
+            "source_label": "FSAVERAGE5 STANDARD BRAIN",
+            "surfaces": surfaces, "electrodes": electrodes,
+            "depth_electrodes": depth_electrodes, "tracts": tracts,
+            "events": events, "propagations": propagations,
+            "settings": {"min_delay_ms": 10, "max_delay_ms": 50,
+                         "radius_mm": 8, "cross_type": False},
+            "demo": {"template": "FreeSurfer fsaverage5",
+                     "leads": 10, "contacts_per_lead": CONTACTS_PER_LEAD,
+                     "contact_diameter_mm": CONTACT_DIAMETER_MM,
+                     "contact_gap_mm": CONTACT_GAP_MM}}
 

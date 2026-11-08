@@ -2,6 +2,7 @@ import gzip
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import nibabel as nib
 import numpy as np
@@ -11,9 +12,21 @@ from dynamic_tractography.scene import find_propagations, read_tracts
 
 
 class SceneTests(unittest.TestCase):
-    def test_demo_has_default_window_paths(self):
-        scene = demo_scene()
-        self.assertEqual(len(scene["propagations"]), 6)
+    def test_demo_has_ten_depth_leads_and_default_window_paths(self):
+        # Geometry stub keeps this test independent of the packaged fsaverage5 mesh.
+        targets = [(-68, 20), (-36, 31), (-5, 38), (29, 31), (59, 17)]
+        coordinates = {hemi: np.array([[side * 70, y, z] for y, z in targets])
+                       for hemi, side in (("lh", -1), ("rh", 1))}
+        with patch("dynamic_tractography.demo._standard_surfaces",
+                   return_value=([], coordinates)):
+            scene = demo_scene()
+        self.assertEqual(len(scene["depth_electrodes"]), 10)
+        self.assertEqual(len(scene["electrodes"]), 80)
+        self.assertGreaterEqual(len(scene["propagations"]), 16)
+        self.assertEqual({e["kind"] for e in scene["events"]}, {"Spike", "HFO"})
+        first = [e for e in scene["electrodes"] if e["lead"] == "A"]
+        pitch = np.linalg.norm(np.asarray(first[1]["xyz"]) - first[0]["xyz"])
+        self.assertAlmostEqual(pitch, 5.5, places=2)
         self.assertTrue(all(10 <= p["delay_ms"] <= 50 for p in scene["propagations"]))
 
     def test_time_and_tract_both_required(self):
@@ -40,4 +53,6 @@ class SceneTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
 

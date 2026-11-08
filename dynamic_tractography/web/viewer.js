@@ -41,18 +41,29 @@ function path(points,color,width,glow){if(!points||points.length<2)return;let pr
 function dot(x,y,r,color,glow){ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fillStyle=color;ctx.shadowColor=color;ctx.shadowBlur=glow;ctx.fill();ctx.shadowBlur=0}
 function drawOverlay(){ctx.clearRect(0,0,overlay.width,overlay.height);const scene=state.scene;if(!scene)return;const scale=Math.min(overlay.width,overlay.height)/700;
   if($('show-tracts').checked){let stride=Math.max(1,Math.ceil(scene.tracts.length/340));for(let i=0;i<scene.tracts.length;i+=stride)path(scene.tracts[i],'rgba(80,210,208,.15)',.7*scale,0)}
+  for(const lead of scene.depth_electrodes||[]){
+    path(lead.path,'rgba(199,225,231,.62)',2.1*scale,8*scale);
+    const [x,y]=project(lead.path[0]);ctx.font=`600 ${Math.max(10,12*scale)}px DM Sans,Arial`;
+    ctx.fillStyle='#b6d5db';ctx.shadowColor='#83dcd8';ctx.shadowBlur=7*scale;
+    ctx.fillText(lead.name,x+8*scale,y-6*scale);ctx.shadowBlur=0;
+  }
   let candidates=scene.propagations.filter(r=>r.start_s-.08<=state.time&&r.end_s+.13>=state.time);if(state.selected!=null){let selected=scene.propagations[state.selected];if(selected&&!candidates.includes(selected))candidates.unshift(selected)}
   for(const r of candidates.slice(0,12)){let color=r.kind==='Spike'?'#ff5ea8':r.kind==='HFO'?'#ffbd70':'#96a5ff';path(r.path,color,3*scale,16*scale);
     let fraction=Math.max(0,Math.min(1,(state.time-r.start_s)/(r.end_s-r.start_s||.001)));let index=Math.min(r.path.length-1,Math.floor(fraction*(r.path.length-1)));let pt=project(r.path[index]);dot(pt[0],pt[1],5*scale,color,24*scale)}
   let active=new Map();for(const ev of scene.events){if(Math.abs(ev.peak_s-state.time)<.09){if(ev.kind==='Spike'&&!$('show-spike').checked)continue;if(ev.kind==='HFO'&&!$('show-hfo').checked)continue;active.set(ev.channel,ev.kind)}}
-  let sorted=[...scene.electrodes].sort((a,b)=>project(a.xyz)[2]-project(b.xyz)[2]);for(const e of sorted){let [x,y]=project(e.xyz),kind=active.get(e.channel),color=kind==='Spike'?'#ff5ea8':kind==='HFO'?'#ffbd70':'#83dcd8';dot(x,y,(kind?6:3.5)*scale,color,kind?26*scale:9*scale);
-    if(kind){ctx.font=`${Math.max(10,11*scale)}px DM Sans,Arial`;ctx.fillStyle='#e7f7f7';ctx.fillText(e.label,x+11*scale,y-10*scale)}}
+  let sorted=[...scene.electrodes].sort((a,b)=>project(a.xyz)[2]-project(b.xyz)[2]);for(const e of sorted){let [x,y]=project(e.xyz),kind=active.get(e.channel),color=kind==='Spike'?'#ff5ea8':kind==='HFO'?'#ffbd70':'#bcecea';
+    const radius=e.contact_diameter_mm?Math.max(1.4,(e.contact_diameter_mm/2)*Math.min(overlay.width,overlay.height)*.47*state.zoom/state.extent):3.5*scale;
+    dot(x,y,radius,color,kind?30*scale:7*scale);
+    if(kind){ctx.beginPath();ctx.arc(x,y,radius+4*scale,0,Math.PI*2);ctx.strokeStyle=color;ctx.lineWidth=1.3*scale;ctx.stroke();ctx.font=`${Math.max(10,11*scale)}px DM Sans,Arial`;ctx.fillStyle='#e7f7f7';ctx.fillText(e.label,x+11*scale,y-10*scale)}}
 }
 function formatTime(seconds){let m=Math.floor(seconds/60),s=Math.floor(seconds%60),ms=Math.floor((seconds%1)*1000);return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}.${String(ms).padStart(3,'0')}`}
 function updateUi(){const scene=state.scene;if(!scene)return;$('current-time').textContent=formatTime(state.time);$('timeline').value=state.time;$('play').textContent=state.playing?'Ⅱ':'▶';let cards=document.querySelectorAll('.candidate');cards.forEach((c,i)=>c.classList.toggle('active',i===state.selected))}
-function frame(ts){if(state.playing&&state.lastFrame){state.time+=Math.min((ts-state.lastFrame)/1000,.1)*Number($('speed').value);if(state.time>=state.max){state.time=state.min;state.playing=false}}state.lastFrame=ts;renderBrain();drawOverlay();updateUi();requestAnimationFrame(frame)}
-function setupUi(){let scene=state.scene;const times=scene.events.map(e=>e.peak_s);state.min=Math.min(...times,0);state.max=Math.max(...times,1);if(state.max-state.min<.2)state.max=state.min+1;state.time=state.min;
-  $('source-label').textContent=scene.source_label;$('event-count').textContent=scene.events.length;$('route-count').textContent=scene.propagations.length;$('electrode-count').textContent=scene.electrodes.length;
+function frame(ts){if(state.playing&&state.lastFrame){state.time+=Math.min((ts-state.lastFrame)/1000,.1)*Number($('speed').value);
+    if(state.scene?.demo){const next=state.scene.events.find(e=>e.peak_s>state.time+.35);const soon=state.scene.events.some(e=>e.peak_s>=state.time&&e.peak_s<=state.time+.35);if(!soon&&next)state.time=next.peak_s-.16}
+    if(state.time>=state.max){state.time=state.min;state.playing=false}}state.lastFrame=ts;renderBrain();drawOverlay();updateUi();requestAnimationFrame(frame)}
+function setupUi(){let scene=state.scene;const times=scene.events.map(e=>e.peak_s);let first=times.length?Math.min(...times):0,last=times.length?Math.max(...times):1;state.min=scene.demo?Math.max(0,first-.18):Math.min(first,0);state.max=scene.demo?last+.2:Math.max(last,1);if(state.max-state.min<.2)state.max=state.min+1;state.time=state.min;
+  $('source-label').textContent=scene.source_label;$('event-count').textContent=scene.events.length;$('route-count').textContent=scene.propagations.length;$('electrode-count').textContent=scene.electrodes.length;$('lead-count').textContent=(scene.depth_electrodes||[]).length||'—';
+  if(scene.demo)$('speed').value='0.1';
   $('window-label').textContent=`${scene.settings.min_delay_ms}–${scene.settings.max_delay_ms} MS`;$('timeline').min=state.min;$('timeline').max=state.max;$('range-label').textContent=`${formatTime(state.min)}  —  ${formatTime(state.max)}`;
   $('ticks').innerHTML=scene.events.slice(0,500).map(e=>`<i class="tick ${e.kind==='HFO'?'hfo':''}" style="left:${100*(e.peak_s-state.min)/(state.max-state.min)}%"></i>`).join('');
   const eById=new Map(scene.events.map(e=>[e.id,e]));let container=$('candidates');if(!scene.propagations.length){container.innerHTML='<div class="empty">No pathway candidates in the current time and tract settings.</div>'}else{
@@ -66,4 +77,6 @@ function setupUi(){let scene=state.scene;const times=scene.events.map(e=>e.peak_
 let dragging=false,lastX=0,lastY=0;overlay.addEventListener('pointerdown',e=>{dragging=true;lastX=e.clientX;lastY=e.clientY;overlay.setPointerCapture(e.pointerId)});overlay.addEventListener('pointermove',e=>{if(!dragging)return;state.yaw+=(e.clientX-lastX)*.008;state.pitch=Math.max(-1.35,Math.min(1.35,state.pitch+(e.clientY-lastY)*.008));lastX=e.clientX;lastY=e.clientY});overlay.addEventListener('pointerup',()=>dragging=false);overlay.addEventListener('wheel',e=>{e.preventDefault();state.zoom=Math.max(.55,Math.min(2.8,state.zoom*Math.exp(-e.deltaY*.001)))},{passive:false});
 window.addEventListener('resize',resize);
 fetch('/scene.json').then(r=>{if(!r.ok)throw Error(`Scene request failed: ${r.status}`);return r.json()}).then(scene=>{state.scene=scene;measureScene();buildBrain();setupUi();resize();requestAnimationFrame(frame)}).catch(err=>{$('candidates').textContent=err.message;console.error(err)});
+
+
 
