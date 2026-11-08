@@ -13,6 +13,8 @@ py -3.12 -m venv "$HOME\.venv"
 & "$HOME\.venv\Scripts\python.exe" -m dynamic_tractography --demo
 ```
 
+Select a cluster, press Play, or use **Save Cluster Video** to download its WebM clip.
+
 Drag to rotate, scroll to zoom, and use the timeline to replay.
 
 ## Run with your data
