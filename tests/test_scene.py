@@ -7,14 +7,14 @@ from unittest.mock import patch
 import nibabel as nib
 import numpy as np
 
-from dynamic_tractography.demo import LEADS, demo_scene
+from dynamic_tractography.demo import PLACEMENTS, demo_scene
 from dynamic_tractography.scene import find_propagations, read_tracts
 
 
 class SceneTests(unittest.TestCase):
     def test_demo_has_ten_depth_leads_and_default_window_paths(self):
         # Geometry stub keeps this test independent of the packaged fsaverage5 mesh.
-        coordinates = np.array([entry for _, _, entry, _ in LEADS], dtype=float)
+        coordinates = np.array([entry for entry, _ in PLACEMENTS.values()], dtype=float)
         with patch("dynamic_tractography.demo._standard_surfaces",
                    return_value=([], coordinates)):
             scene = demo_scene()
@@ -71,6 +71,8 @@ class SceneTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
 
 
 

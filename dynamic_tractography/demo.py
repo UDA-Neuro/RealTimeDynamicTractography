@@ -11,18 +11,32 @@ CONTACT_PITCH_MM = CONTACT_DIAMETER_MM + CONTACT_GAP_MM
 CONTACTS_PER_LEAD = 8
 CONTACT_DEPTH_MM = 5 + (CONTACTS_PER_LEAD - 1) * CONTACT_PITCH_MM
 
-# Approximate entry and deep target coordinates on the left fsaverage5 surface.
+# Entry and tip were selected on the fsaverage5 left hemisphere. Each 43.5 mm
+# shaft remains inside its pial surface after entering and ends left of x=-12.
+PLACEMENTS = {
+    "A": ((-65.77, -23.72, -19.69), (-22.31, -21.93, -19.08)),
+    "B": ((-68.02, -22.90, 0.41), (-35.68, -2.98, -20.78)),
+    "C": ((-68.50, -31.55, 6.78), (-33.76, -57.42, 2.82)),
+    "D": ((-62.87, -59.78, 3.84), (-23.03, -72.33, 15.97)),
+    "E": ((-57.30, 15.35, 15.99), (-18.89, 31.92, 27.92)),
+    "F": ((-53.64, 31.07, 0.99), (-16.80, 45.97, -16.70)),
+    "G": ((-60.52, 4.04, -6.42), (-32.71, 19.38, -36.14)),
+    "H": ((-59.97, 1.96, 4.90), (-23.68, 24.83, 12.17)),
+    "I": ((-46.74, -74.84, 31.45), (-17.83, -86.52, 1.11)),
+    "J": ((-45.57, 17.87, 42.34), (-16.55, 47.98, 30.37)),
+}
+
 LEADS = (
-    ("A", "Medial temporal", (-75, -25, -18), (-20, -22, -18)),
-    ("B", "Lateral temporal", (-82, -5, -8), (-48, -7, -10)),
-    ("C", "Posterior temporal", (-80, -50, 5), (-48, -52, 6)),
-    ("D", "Occipital", (-66, -82, 12), (-35, -78, 13)),
-    ("E", "Dorsal frontal", (-72, 27, 37), (-43, 26, 35)),
-    ("F", "Orbitofrontal", (-62, 46, -18), (-30, 43, -17)),
-    ("G", "Temporal pole", (-64, 55, -15), (-41, 50, -12)),
-    ("H", "Inferior frontal", (-74, 17, 8), (-42, 20, 10)),
-    ("I", "Posterior occipital", (-55, -93, 28), (-30, -86, 24)),
-    ("J", "Superior frontal", (-55, 48, 48), (-30, 47, 42)),
+    ("A", "Medial temporal"),
+    ("B", "Lateral temporal"),
+    ("C", "Posterior temporal"),
+    ("D", "Occipital"),
+    ("E", "Dorsal frontal"),
+    ("F", "Orbitofrontal"),
+    ("G", "Temporal pole"),
+    ("H", "Inferior frontal"),
+    ("I", "Posterior occipital"),
+    ("J", "Superior frontal"),
 )
 
 ROUTES = {
@@ -62,22 +76,12 @@ def _standard_surfaces() -> tuple[list[dict], np.ndarray]:
 
 def _electrode_array(left_vertices: np.ndarray) -> tuple[list[dict], list[dict]]:
     electrodes, depth_electrodes = [], []
-    eligible = left_vertices[left_vertices[:, 0] < -35]
-    if not len(eligible):
-        raise ValueError("fsaverage5 left hemisphere has no lateral entry vertices")
-    for lead_index, (name, region, wanted_entry, target) in enumerate(LEADS):
-        wanted_entry = np.asarray(wanted_entry, dtype=float)
-        target = np.asarray(target, dtype=float)
-        entry = eligible[np.argmin(np.linalg.norm(eligible - wanted_entry, axis=1))].copy()
-        direction = target - entry
+    for lead_index, (name, region) in enumerate(LEADS):
+        entry, intended_tip = (np.asarray(p, dtype=float) for p in PLACEMENTS[name])
+        if np.min(np.linalg.norm(left_vertices - entry, axis=1)) > 1.0:
+            raise ValueError(f"Depth electrode {name} entry does not match fsaverage5")
+        direction = intended_tip - entry
         direction /= np.linalg.norm(direction)
-        max_inward_x = (-12 - entry[0]) / CONTACT_DEPTH_MM
-        if direction[0] > max_inward_x:
-            yz = direction[1:]
-            if np.linalg.norm(yz) < 1e-6:
-                yz = np.array([.8, .6])
-            yz /= np.linalg.norm(yz)
-            direction = np.r_[max_inward_x, yz * np.sqrt(1 - max_inward_x**2)]
         contact_numbers = []
         for contact_index in range(CONTACTS_PER_LEAD):
             number = lead_index * CONTACTS_PER_LEAD + contact_index + 1
@@ -162,4 +166,6 @@ def demo_scene() -> dict:
                      "contacts_per_lead": CONTACTS_PER_LEAD,
                      "contact_diameter_mm": CONTACT_DIAMETER_MM,
                      "contact_gap_mm": CONTACT_GAP_MM}}
+
+
 
