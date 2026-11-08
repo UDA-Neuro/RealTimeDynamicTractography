@@ -2,17 +2,19 @@
 
 A local research viewer for Spike and HFO event sequences over FreeSurfer anatomy and tractography. The first version emphasizes a clear, interactive 3D display: a translucent cortex, turquoise fiber paths, pink Spike events, and amber HFO events. It runs in a local browser and does not upload patient data.
 
-## Preview
+## Preview on Windows (Git is not required)
+
+Install the published source archive into a virtual environment. These commands work from your PowerShell home directory:
 
 ```powershell
-git clone https://github.com/UDA-Neuro/RealTimeDynamicTractography.git
-cd .\RealTimeDynamicTractography
 py -3.12 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -e .
-.\.venv\Scripts\python.exe -m dynamic_tractography --demo
+& "$HOME\.venv\Scripts\python.exe" -m pip install "https://github.com/UDA-Neuro/RealTimeDynamicTractography/archive/refs/heads/main.zip"
+& "$HOME\.venv\Scripts\python.exe" -m dynamic_tractography --demo
 ```
 
-The demo creates synthetic anatomy, electrodes, fibers and events. Drag to rotate, scroll to zoom, and use the timeline to replay the sequence.
+If you already created `$HOME\.venv`, run only the last two commands. The demo creates synthetic anatomy, electrodes, fibers and events. Drag to rotate, scroll to zoom, and use the timeline to replay the sequence.
+
+To work with source files, download the repository ZIP from GitHub and extract it. Git is optional.
 
 ## Patient data
 
