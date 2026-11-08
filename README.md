@@ -4,7 +4,7 @@
 
 ```powershell
 py -3.12 -m venv "$HOME\.venv"
-& "$HOME\.venv\Scripts\python.exe" -m pip install "https://github.com/UDA-Neuro/RealTimeDynamicTractography/archive/refs/heads/main.zip"
+& "$HOME\.venv\Scripts\python.exe" -m pip install --upgrade "https://github.com/UDA-Neuro/RealTimeDynamicTractography/archive/refs/heads/main.zip"
 ```
 
 ## Run the demo
