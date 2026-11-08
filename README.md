@@ -5,6 +5,8 @@ A local research viewer for Spike and HFO event sequences over FreeSurfer anatom
 ## Preview
 
 ```powershell
+git clone https://github.com/UDA-Neuro/RealTimeDynamicTractography.git
+cd .\RealTimeDynamicTractography
 py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e .
 .\.venv\Scripts\python.exe -m dynamic_tractography --demo
