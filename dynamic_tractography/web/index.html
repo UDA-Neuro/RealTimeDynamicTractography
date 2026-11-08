@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>DYNAMIC TRACTOGRAPHY</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand"><span class="brand-mark">✳</span><div><div class="eyebrow">NEURAL PATHWAYS · RESEARCH VIEWER</div><h1>DYNAMIC <b>TRACTOGRAPHY</b></h1></div></div>
+      <div class="top-right"><span class="live-dot"></span><span id="source-label">LOADING DATA</span><span class="pill">3D STUDIO</span></div>
+    </header>
+    <main class="layout">
+      <section class="stage">
+        <canvas id="brain"></canvas><canvas id="overlay"></canvas>
+        <div class="stage-top"><span class="chip">◈ &nbsp; NEURAL ATLAS</span><span class="chip subtle">DRAG TO ROTATE · SCROLL TO ZOOM</span></div>
+        <div class="orientation"><div class="axis">S</div><div class="axis-row"><span>L</span><i></i><span>R</span></div><div class="axis">I</div></div>
+        <div class="stage-bottom"><div class="legend"><span><i class="swatch brain-swatch"></i>CORTEX</span><span><i class="swatch tract-swatch"></i>TRACTS</span><span><i class="swatch spike-swatch"></i>SPIKE</span><span><i class="swatch hfo-swatch"></i>HFO</span></div><button id="reset-view" class="icon-button" title="Reset view">⟲</button></div>
+      </section>
+      <aside class="sidepanel">
+        <div class="panel-heading"><div class="eyebrow">01 / OBSERVATION</div><h2>Propagation <em>studio</em></h2><p>Explore event sequences aligned with structural pathways.</p></div>
+        <div class="stats"><div><strong id="event-count">—</strong><small>EVENTS</small></div><div><strong id="route-count">—</strong><small>PATHWAYS</small></div><div><strong id="electrode-count">—</strong><small>CONTACTS</small></div></div>
+        <div class="section-title">LAYERS <span>VIEW OPTIONS</span></div>
+        <label class="toggle"><span><i class="mini brain-swatch"></i> Brain surface</span><input id="show-brain" type="checkbox" checked><i class="switch"></i></label>
+        <label class="toggle"><span><i class="mini tract-swatch"></i> Fiber tracts</span><input id="show-tracts" type="checkbox" checked><i class="switch"></i></label>
+        <label class="toggle"><span><i class="mini spike-swatch"></i> Spike events</span><input id="show-spike" type="checkbox" checked><i class="switch"></i></label>
+        <label class="toggle"><span><i class="mini hfo-swatch"></i> HFO events</span><input id="show-hfo" type="checkbox" checked><i class="switch"></i></label>
+        <div class="section-title findings-title">PATHWAY CANDIDATES <span id="window-label">10–50 MS</span></div>
+        <div id="candidates" class="candidates"></div>
+        <div class="method-note">Temporal order and streamline proximity define candidates. The tractogram does not establish neural causality or conduction direction.</div>
+      </aside>
+    </main>
+    <footer class="timeline-panel"><div class="timeline-meta"><button id="play" class="play">▶</button><div class="time-readout"><strong id="current-time">00:00.000</strong><span>RECORDING TIME</span></div><div class="timeline-main"><div class="ruler"><span>EVENT TIMELINE</span><span id="range-label">—</span></div><input id="timeline" type="range" min="0" max="1" step="0.001" value="0"><div id="ticks" class="ticks"></div></div><div class="speed">SPEED <select id="speed"><option value="1">1×</option><option value="0.25">0.25×</option><option value="2">2×</option><option value="5">5×</option></select></div></div></footer>
+  </div>
+  <script src="/viewer.js"></script>
+</body>
+</html>
+
