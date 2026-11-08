@@ -1,4 +1,5 @@
 import gzip
+import importlib.util
 from pathlib import Path
 import tempfile
 import unittest
@@ -7,7 +8,7 @@ from unittest.mock import patch
 import nibabel as nib
 import numpy as np
 
-from dynamic_tractography.demo import PLACEMENTS, demo_scene
+from dynamic_tractography.demo import PLACEMENTS, _electrode_array, demo_scene
 from dynamic_tractography.scene import find_propagations, read_tracts
 
 
@@ -19,7 +20,7 @@ class SceneTests(unittest.TestCase):
                    return_value=([], coordinates)):
             scene = demo_scene()
         self.assertEqual(len(scene["depth_electrodes"]), 10)
-        self.assertEqual(len(scene["electrodes"]), 80)
+        self.assertEqual(len(scene["electrodes"]), 60)
         self.assertEqual(len(scene["clusters"]), 4)
         self.assertEqual(len(scene["propagations"]), 20)
         for cluster in scene["clusters"]:
@@ -32,6 +33,11 @@ class SceneTests(unittest.TestCase):
                          {"TEMPORAL", "IFOF", "ARCUATE", "UNCINATE"})
         self.assertTrue(all(lead["hemi"] == "lh" and lead["path"][-1][0] < -10
                             for lead in scene["depth_electrodes"]))
+        for lead in scene["depth_electrodes"]:
+            entry, tip = np.asarray(lead["path"])
+            self.assertGreater(tip[0], entry[0])
+            np.testing.assert_allclose(tip[1:], entry[1:])
+            self.assertEqual(len(lead["contacts"]), 6)
         self.assertTrue(all(e["xyz"][0] < -10 for e in scene["electrodes"]))
         first = [e for e in scene["electrodes"] if e["lead"] == "A"]
         pitch = np.linalg.norm(np.asarray(first[1]["xyz"]) - first[0]["xyz"])
@@ -56,6 +62,35 @@ class SceneTests(unittest.TestCase):
         self.assertEqual({p["source_id"] for p in paths}, {"0"})
         self.assertEqual({p["target_id"] for p in paths}, {"1", "2"})
 
+    @unittest.skipUnless(importlib.util.find_spec("nilearn"), "Nilearn is not installed")
+    def test_real_fsaverage5_contains_every_demo_contact(self):
+        from nilearn.datasets import fetch_surf_fsaverage
+
+        atlas = fetch_surf_fsaverage("fsaverage5")
+        vertices, faces = nib.load(atlas["pial_left"]).agg_data()
+        vertices = np.asarray(vertices, float)
+        triangles = vertices[faces]
+        electrodes, leads = _electrode_array(vertices)
+        self.assertEqual(len(electrodes), 60)
+        for lead in leads:
+            contacts = [e["xyz"] for e in electrodes if e["lead"] == lead["name"]]
+            points = contacts + [lead["path"][-1]]
+            for x, y, z in points:
+                mask = ((triangles[:, :, 1].min(axis=1) <= y) &
+                        (triangles[:, :, 1].max(axis=1) >= y) &
+                        (triangles[:, :, 2].min(axis=1) <= z) &
+                        (triangles[:, :, 2].max(axis=1) >= z))
+                a, b, c = triangles[mask].transpose(1, 0, 2)
+                u, v = b - a, c - a
+                denom = u[:, 1] * v[:, 2] - u[:, 2] * v[:, 1]
+                valid = np.abs(denom) > 1e-8
+                s = ((y-a[:, 1])*v[:, 2] - (z-a[:, 2])*v[:, 1]) / np.where(valid, denom, 1)
+                t = (u[:, 1]*(z-a[:, 2]) - u[:, 2]*(y-a[:, 1])) / np.where(valid, denom, 1)
+                valid &= (s >= -1e-6) & (t >= -1e-6) & (s+t <= 1+1e-6)
+                intersections = np.unique(np.round(a[valid, 0] + s[valid]*u[valid, 0] + t[valid]*v[valid, 0], 2))
+                self.assertTrue(any(left < x < right for left, right in zip(intersections[::2], intersections[1::2])),
+                                f"{lead['name']} has a contact outside the pial surface")
+
     def test_gzipped_trk(self):
         with tempfile.TemporaryDirectory(dir=Path.cwd()) as folder:
             path = Path(folder)
@@ -71,6 +106,8 @@ class SceneTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
 
 
 

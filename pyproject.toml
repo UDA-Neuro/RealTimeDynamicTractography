@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "realtime-dynamic-tractography"
-version = "0.3.1"
+version = "0.4.0"
 description = "Interactive research visualization of electrophysiology events and tractography"
 requires-python = ">=3.11"
 dependencies = ["numpy>=1.26", "nibabel>=5.2", "nilearn>=0.11"]
@@ -14,6 +14,8 @@ dynamic-tractography = "dynamic_tractography.app:main"
 
 [tool.setuptools.package-data]
 dynamic_tractography = ["web/*"]
+
+
 
 
 

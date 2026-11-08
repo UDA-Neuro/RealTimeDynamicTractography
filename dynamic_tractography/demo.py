@@ -8,22 +8,23 @@ import numpy as np
 CONTACT_DIAMETER_MM = 2.0
 CONTACT_GAP_MM = 3.5
 CONTACT_PITCH_MM = CONTACT_DIAMETER_MM + CONTACT_GAP_MM
-CONTACTS_PER_LEAD = 8
+CONTACTS_PER_LEAD = 6
 CONTACT_DEPTH_MM = 5 + (CONTACTS_PER_LEAD - 1) * CONTACT_PITCH_MM
 
-# Entry and tip were selected on the fsaverage5 left hemisphere. Each 43.5 mm
-# shaft remains inside its pial surface after entering and ends left of x=-12.
+# Each shaft follows the left-to-right scanner x direction: lateral to medial
+# in the left hemisphere. At these y/z positions the entire 32.5 mm shaft fits
+# within one continuous fsaverage5 pial cross-section.
 PLACEMENTS = {
-    "A": ((-65.77, -23.72, -19.69), (-22.31, -21.93, -19.08)),
-    "B": ((-68.02, -22.90, 0.41), (-35.68, -2.98, -20.78)),
-    "C": ((-68.50, -31.55, 6.78), (-33.76, -57.42, 2.82)),
-    "D": ((-62.87, -59.78, 3.84), (-23.03, -72.33, 15.97)),
-    "E": ((-57.30, 15.35, 15.99), (-18.89, 31.92, 27.92)),
-    "F": ((-53.64, 31.07, 0.99), (-16.80, 45.97, -16.70)),
-    "G": ((-60.52, 4.04, -6.42), (-32.71, 19.38, -36.14)),
-    "H": ((-59.97, 1.96, 4.90), (-23.68, 24.83, 12.17)),
-    "I": ((-46.74, -74.84, 31.45), (-17.83, -86.52, 1.11)),
-    "J": ((-45.57, 17.87, 42.34), (-16.55, 47.98, 30.37)),
+    "A": ((-60.03, -22, -22), (-27.53, -22, -22)),
+    "B": ((-63.61, -8, -22), (-31.11, -8, -22)),
+    "C": ((-66.53, -44, -2), (-34.03, -44, -2)),
+    "D": ((-56.39, -60, 10), (-23.89, -60, 10)),
+    "E": ((-56.24, 20, 20), (-23.74, 20, 20)),
+    "F": ((-47.62, 40, -12), (-15.12, 40, -12)),
+    "G": ((-56.81, 4, -30), (-24.31, 4, -30)),
+    "H": ((-53.03, 20, 10), (-20.53, 20, 10)),
+    "I": ((-47.16, -74, 16), (-14.66, -74, 16)),
+    "J": ((-45.76, 32, 30), (-13.26, 32, 30)),
 }
 
 LEADS = (
@@ -78,7 +79,7 @@ def _electrode_array(left_vertices: np.ndarray) -> tuple[list[dict], list[dict]]
     electrodes, depth_electrodes = [], []
     for lead_index, (name, region) in enumerate(LEADS):
         entry, intended_tip = (np.asarray(p, dtype=float) for p in PLACEMENTS[name])
-        if np.min(np.linalg.norm(left_vertices - entry, axis=1)) > 1.0:
+        if np.min(np.linalg.norm(left_vertices - entry, axis=1)) > 4.0:
             raise ValueError(f"Depth electrode {name} entry does not match fsaverage5")
         direction = intended_tip - entry
         direction /= np.linalg.norm(direction)
@@ -166,6 +167,8 @@ def demo_scene() -> dict:
                      "contacts_per_lead": CONTACTS_PER_LEAD,
                      "contact_diameter_mm": CONTACT_DIAMETER_MM,
                      "contact_gap_mm": CONTACT_GAP_MM}}
+
+
 
 
 
