@@ -13,6 +13,14 @@ py -3.12 -m venv "$HOME\.venv"
 & "$HOME\.venv\Scripts\python.exe" -m dynamic_tractography --demo
 ```
 
+The first run downloads and caches the HCP1065 TRK atlas (about 588 MB). To use an existing download:
+
+```powershell
+& "$HOME\.venv\Scripts\python.exe" -m dynamic_tractography --demo --demo-atlas 'D:\data\hcp1065_avg_tracts_trk.zip'
+```
+
+Atlas: [Yeh 2022 HCP1065](https://brain.labsolver.org/hcp_trk_atlas.html), derived from WU-Minn HCP data.
+
 Select a cluster, press Play, or use **Save Cluster Video** to download its WebM clip.
 
 Drag to rotate, scroll to zoom, and use the timeline to replay.
@@ -44,3 +52,5 @@ channel_number,label,x,y,z
 ```
 
 Optional parameters: `--min-delay-ms` (default 10), `--max-delay-ms` (default 50), `--electrode-radius-mm` (default 8), and `--cross-type`.
+
+
