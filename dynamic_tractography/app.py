@@ -10,7 +10,7 @@ import threading
 import webbrowser
 
 from .scene import build_scene
-from .demo import demo_scene
+from .atlas_demo import atlas_demo_scene
 
 
 class ViewerHandler(SimpleHTTPRequestHandler):
@@ -50,10 +50,12 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--no-browser", action="store_true")
     parser.add_argument("--export-scene", type=Path, help="Write scene JSON before serving")
-    parser.add_argument("--demo", action="store_true", help="Preview synthetic data")
+    parser.add_argument("--demo", action="store_true", help="Preview HCP1065 atlas data")
+    parser.add_argument("--demo-atlas", type=Path,
+                        help="Existing HCP1065 TRK atlas ZIP or extracted directory")
     args = parser.parse_args(argv)
     if args.demo:
-        scene = demo_scene()
+        scene = atlas_demo_scene(args.demo_atlas)
     else:
         if not args.electrodes or (not args.spike and not args.hfo):
             parser.error("Provide --electrodes and at least one of --spike or --hfo")
@@ -82,4 +84,6 @@ def main(argv: list[str] | None = None) -> None:
 
 if __name__ == "__main__":
     main()
+
+
 
