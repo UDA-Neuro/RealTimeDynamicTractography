@@ -160,50 +160,52 @@ def _lead_at(name: str, region: str, point: np.ndarray, mask: np.ndarray,
     return contacts, lead, contacts[contact_index]
 
 
-def _source(bundles: dict, mask: np.ndarray, inverse: np.ndarray):
+def _sources(bundles: dict, mask: np.ndarray, inverse: np.ndarray):
     clouds = {}
     trees = {}
     for bundle, tracks in bundles.items():
         points = np.concatenate([track[::max(1, len(track)//20)] for track in tracks[:600]])
         clouds[bundle] = points
         trees[bundle] = cKDTree(points)
-    candidates = np.concatenate([clouds[b] for b in ("UNCINATE", "IFOF", "TEMPORAL", "ARCUATE") if b in clouds])
-    candidates = candidates[::max(1, len(candidates)//1500)]
-    best = None
-    for point in candidates:
-        if not (-55 < point[0] < -15 and -55 < point[1] < 12 and -35 < point[2] < 5):
-            continue
-        lead = _lead_at("A", "Medial temporal", point, mask, inverse, 0)
-        if lead is None:
-            continue
-        contact = np.asarray(lead[2]["xyz"])
-        near = {bundle: trees[bundle].query(contact)[0] for bundle in trees}
-        score = (sum(distance < 8 for distance in near.values()),
-                 sum(distance < 12 for distance in near.values()),
-                 -sum(min(distance, 30) for distance in near.values()))
-        if best is None or score > best[0]:
-            best = (score, contact, lead)
-    if best is None:
+    options = []
+    for origin_bundle, points in clouds.items():
+        for point in points[::max(1, len(points)//450)]:
+            if not (-55 < point[0] < -15 and -55 < point[1] < 12 and -35 < point[2] < 5):
+                continue
+            lead = _lead_at("A", "Temporal source", point, mask, inverse, 0)
+            if lead is None:
+                continue
+            contact = np.asarray(lead[2]["xyz"])
+            near = {bundle: trees[bundle].query(contact)[0] for bundle in trees}
+            score = (sum(distance < 8 for distance in near.values()),
+                     sum(distance < 12 for distance in near.values()),
+                     -sum(min(distance, 30) for distance in near.values()))
+            options.append((score, contact, lead, origin_bundle))
+    if not options:
         raise ValueError("No HCP1065 tract point can be reached by a left orthogonal depth electrode")
-    return best[1], best[2]
+    options.sort(key=lambda item: item[0], reverse=True)
+    chosen = []
+    for bundle in clouds:
+        count = 0
+        for option in options:
+            if option[3] != bundle or any(np.linalg.norm(option[1][1:] - other[1][1:]) < 7
+                                          for other in chosen):
+                continue
+            chosen.append(option)
+            count += 1
+            if count == 8:
+                break
+    return [(contact, lead) for _, contact, lead, _ in chosen]
 
 
-def atlas_demo_scene(atlas_path: Path | None = None) -> dict:
-    atlas_path = _atlas_path(atlas_path)
-    stat = atlas_path.stat()
-    cache_key = sha256(f"{atlas_path.resolve()}:{stat.st_size}:{stat.st_mtime_ns}".encode()).hexdigest()[:12]
-    cache_dir = Path.home() / ".cache" / "dynamic_tractography" / cache_key
-    bundles = _load_bundles(atlas_path, cache_dir)
-    surfaces, mask, affine = _standard_brain()
-    inverse = np.linalg.inv(affine)
-    source_xyz, source_lead = _source(bundles, mask, inverse)
-    electrodes, depth_electrodes = list(source_lead[0]), [source_lead[1]]
-    source_contact = source_lead[2]
+def _select_routes(bundles: dict, source_xyz: np.ndarray, mask: np.ndarray,
+                   inverse: np.ndarray, only_bundle: str | None = None):
     selected = []
-    # Prefer a balanced view, then fill any remaining leads with available tracts.
-    desired = ["TEMPORAL", "IFOF", "ARCUATE", "UNCINATE"]
+    desired = [only_bundle] if only_bundle else ["TEMPORAL", "IFOF", "ARCUATE", "UNCINATE"]
     paths_by_bundle = defaultdict(list)
     for bundle, tracks in bundles.items():
+        if only_bundle and bundle != only_bundle:
+            continue
         for track in tracks:
             distance = np.linalg.norm(track - source_xyz, axis=1)
             near = int(np.argmin(distance))
@@ -217,17 +219,15 @@ def atlas_demo_scene(atlas_path: Path | None = None) -> dict:
                     continue
                 paths_by_bundle[bundle].append((float(distance[near]), segment))
         paths_by_bundle[bundle].sort(key=lambda item: item[0])
-    for bundle in desired * 3:
+    for bundle in desired * 9:
         if len(selected) >= 9:
             break
         for _, segment in paths_by_bundle[bundle]:
-            if len(selected) >= 9:
-                break
             name = chr(ord("B") + len(selected))
             for target_point in segment[::-1][::3]:
                 if np.linalg.norm(target_point - source_xyz) < 25:
                     continue
-                if any(np.linalg.norm(target_point[1:] - item[3][1:]) < 12 for item in selected):
+                if any(np.linalg.norm(target_point[1:] - item[3][1:]) < 8 for item in selected):
                     continue
                 target_lead = _lead_at(name, bundle.title(), target_point, mask, inverse, len(selected) + 1)
                 if target_lead is not None:
@@ -236,41 +236,62 @@ def atlas_demo_scene(atlas_path: Path | None = None) -> dict:
             else:
                 continue
             break
-    if len(selected) < 5:
-        raise ValueError("Atlas has too few streamlines connecting left depth contacts near the temporal source")
-    for index, (_, _, lead, _) in enumerate(selected):
-        electrodes.extend(lead[0])
-        depth_electrodes.append(lead[1])
-    # Fill to ten orthogonal left leads without inventing propagation paths.
-    while len(depth_electrodes) < 10:
-        name = chr(ord("A") + len(depth_electrodes))
-        for point in np.concatenate([track[::20] for tracks in bundles.values() for track in tracks[:30]]):
-            if any(np.linalg.norm(point[1:] - np.asarray(lead["path"][-1])[1:]) < 12
-                   for lead in depth_electrodes):
-                continue
-            lead = _lead_at(name, "Atlas tract", point, mask, inverse, len(depth_electrodes))
-            if lead:
-                electrodes.extend(lead[0])
-                depth_electrodes.append(lead[1])
-                break
-        else:
-            raise ValueError("Could not place ten independent orthogonal depth leads")
-    tracts, events, propagations, clusters = [], [], [], []
+    return selected
+
+
+def atlas_demo_scene(atlas_path: Path | None = None) -> dict:
+    atlas_path = _atlas_path(atlas_path)
+    stat = atlas_path.stat()
+    cache_key = sha256(f"{atlas_path.resolve()}:{stat.st_size}:{stat.st_mtime_ns}".encode()).hexdigest()[:12]
+    cache_dir = Path.home() / ".cache" / "dynamic_tractography" / cache_key
+    bundles = _load_bundles(atlas_path, cache_dir)
+    surfaces, mask, affine = _standard_brain()
+    inverse = np.linalg.inv(affine)
+    candidates = _sources(bundles, mask, inverse)
+    cluster_scenes, clusters = {}, []
     specs = (("spike-temporal", "SPIKE · TEMPORAL", "Spike", 2.0, "TEMPORAL"),
              ("hfo-occipital", "HFO · IFOF", "HFO", 5.0, "IFOF"),
              ("spike-frontal", "SPIKE · ARCUATE", "Spike", 8.0, "ARCUATE"),
              ("hfo-network", "HFO · UNCINATE", "HFO", 11.0, "UNCINATE"))
-    for cluster_id, title, kind, start, preferred in specs:
-        ordered = [item for item in selected if item[0] == preferred]
-        ordered += [item for item in selected if item[0] != preferred]
-        ordered = ordered[:5]
-        if not any(item[0] == preferred for item in ordered):
-            title = f"{kind.upper()} · ATLAS FAN"
+    filler_points = np.concatenate([track[::20] for tracks in bundles.values() for track in tracks[:30]])
+    for cluster_id, title, kind, start, bundle in specs:
+        if bundle not in bundles:
+            raise ValueError(f"HCP1065 atlas is missing left {bundle} TRK bundle")
+        best = None
+        for source_xyz, source_lead in candidates:
+            selected = _select_routes(bundles, source_xyz, mask, inverse, bundle)
+            if best is None or len(selected) > len(best[2]):
+                best = (source_xyz, source_lead, selected)
+            if len(selected) >= 9:
+                break
+        if best is None or len(best[2]) < 5:
+            raise ValueError(f"Cannot place five left depth contacts along {bundle} atlas streamlines")
+        source_xyz, source_lead, selected = best
+        selected = selected[:5]
+        electrodes, depth_electrodes = list(source_lead[0]), [source_lead[1]]
+        source_contact = source_lead[2]
+        for _, _, lead, _ in selected:
+            electrodes.extend(lead[0])
+            depth_electrodes.append(lead[1])
+        while len(depth_electrodes) < 10:
+            name = chr(ord("A") + len(depth_electrodes))
+            for point in filler_points:
+                if any(np.linalg.norm(point[1:] - np.asarray(lead["path"][-1])[1:]) < 12
+                       for lead in depth_electrodes):
+                    continue
+                lead = _lead_at(name, "Atlas tract", point, mask, inverse, len(depth_electrodes))
+                if lead:
+                    electrodes.extend(lead[0])
+                    depth_electrodes.append(lead[1])
+                    break
+            else:
+                raise ValueError("Could not place ten independent orthogonal depth leads")
+        tracts, events, propagations = [], [], []
         source_id = cluster_id + "-source"
         events.append({"id": source_id, "kind": kind, "channel": source_contact["channel_number"],
                        "peak_s": start, "score": 8.5, "cluster_id": cluster_id})
         event_ids = [source_id]
-        for j, (bundle, segment, lead, _) in enumerate(ordered):
+        for j, (_, segment, lead, _) in enumerate(selected):
             contact = lead[2]
             # The highlighted path is an unmodified segment of a real atlas streamline.
             start_index = int(np.argmin(np.linalg.norm(segment - source_xyz, axis=1)))
@@ -300,11 +321,15 @@ def atlas_demo_scene(atlas_path: Path | None = None) -> dict:
         clusters.append({"id": cluster_id, "title": title, "kind": kind,
                          "source_label": source_contact["label"], "event_ids": event_ids,
                          "start_s": start, "end_s": start + .046})
+        cluster_scenes[cluster_id] = {"electrodes": electrodes,
+                                      "depth_electrodes": depth_electrodes,
+                                      "tracts": tracts, "events": events,
+                                      "propagations": propagations}
+    first = cluster_scenes[specs[0][0]]
     return {"title": "DYNAMIC TRACTOGRAPHY",
             "source_label": "HCP1065 · DSI STUDIO TRK ATLAS · ICBM152 2009a",
-            "surfaces": surfaces, "electrodes": electrodes,
-            "depth_electrodes": depth_electrodes, "tracts": tracts,
-            "events": events, "propagations": propagations, "clusters": clusters,
+            "surfaces": surfaces, **first, "clusters": clusters,
+            "cluster_scenes": cluster_scenes,
             "settings": {"min_delay_ms": 10, "max_delay_ms": 50,
                          "radius_mm": 8, "cross_type": False, "step_limit": 1},
             "demo": {"template": "ICBM152 2009a", "atlas": "HCP1065 TRK",
