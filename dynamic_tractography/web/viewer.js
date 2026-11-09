@@ -70,7 +70,7 @@ function composeVideo(){const rec=state.recording;if(!rec)return;const c=rec.con
   c.fillStyle='#75dcd4';c.font=`600 ${Math.max(12,w*.014)}px Arial`;c.fillText(rec.title,28,68);
   c.fillStyle='#e3f2f2';c.font=`${Math.max(12,w*.014)}px Arial`;c.fillText(formatTime(state.time),28,h-24);
 }
-function frame(ts){if(state.recording){state.time=Math.min(state.max,state.min+(ts-state.recording.started)/10000)}
+function frame(ts){if(state.recording){state.time=Math.min(state.max,state.min+(ts-state.recording.started)/1000*state.recording.speed)}
   else if(state.playing&&state.lastFrame){state.time+=Math.min((ts-state.lastFrame)/1000,.1)*Number($('speed').value);
     if(state.time>=state.max){state.time=state.min;if(!state.selectedCluster)state.playing=false}}
   state.lastFrame=ts;renderBrain();drawOverlay();updateUi();composeVideo();
@@ -101,7 +101,7 @@ function saveClusterVideo(){if(!state.selectedCluster||!window.MediaRecorder||!H
   let recorder;try{recorder=new MediaRecorder(stream,{mimeType:mime})}catch(err){button.disabled=false;button.textContent='VIDEO EXPORT UNAVAILABLE';stream.getTracks().forEach(t=>t.stop());return}
   recorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};
   recorder.onstop=()=>{const blob=new Blob(chunks,{type:'video/webm'});const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download=`dynamic-tractography-${state.selectedCluster}.webm`;link.click();setTimeout(()=>URL.revokeObjectURL(url),30000);stream.getTracks().forEach(t=>t.stop());state.recording=null;button.disabled=false;button.textContent='↓   SAVE CLUSTER VIDEO';state.time=state.min};
-  const cluster=state.scene.clusters.find(c=>c.id===state.selectedCluster);state.recording={canvas,context:canvas.getContext('2d'),recorder,started:performance.now(),title:cluster.title,finished:false};recorder.start(100)
+  const cluster=state.scene.clusters.find(c=>c.id===state.selectedCluster);state.recording={canvas,context:canvas.getContext('2d'),recorder,started:performance.now(),speed:Number($('speed').value),title:cluster.title,finished:false};recorder.start(100)
 }
 function setupUi(){const scene=state.scene;$('source-label').textContent=scene.source_label;$('electrode-count').textContent=scene.electrodes.length;$('lead-count').textContent=(scene.depth_electrodes||[]).length||'—';
   $('window-label').textContent=`${scene.settings.min_delay_ms}–${scene.settings.max_delay_ms} MS`;if(scene.demo)$('speed').value='0.1';
@@ -112,6 +112,8 @@ function setupUi(){const scene=state.scene;$('source-label').textContent=scene.s
 let dragging=false,lastX=0,lastY=0;overlay.addEventListener('pointerdown',e=>{dragging=true;lastX=e.clientX;lastY=e.clientY;overlay.setPointerCapture(e.pointerId)});overlay.addEventListener('pointermove',e=>{if(!dragging)return;state.yaw+=(e.clientX-lastX)*.008;state.pitch=Math.max(-1.35,Math.min(1.35,state.pitch+(e.clientY-lastY)*.008));lastX=e.clientX;lastY=e.clientY});overlay.addEventListener('pointerup',()=>dragging=false);overlay.addEventListener('wheel',e=>{e.preventDefault();state.zoom=Math.max(.55,Math.min(2.8,state.zoom*Math.exp(-e.deltaY*.001)))},{passive:false});
 window.addEventListener('resize',resize);
 fetch('/scene.json').then(r=>{if(!r.ok)throw Error(`Scene request failed: ${r.status}`);return r.json()}).then(scene=>{state.scene=scene;measureScene();buildBrain();setupUi();resize();requestAnimationFrame(frame)}).catch(err=>{$('candidates').textContent=err.message;console.error(err)});
+
+
 
 
 
