@@ -87,7 +87,10 @@ function renderCandidates(){const container=$('candidates');container.replaceChi
     card.append(top,route,bottom);card.onclick=()=>{state.selectedRoute=r.track_id;state.time=r.start_s-.03;state.playing=true};container.append(card)
   }
 }
-function selectCluster(id){if(state.recording)return;state.selectedCluster=id;state.selectedRoute=null;state.playing=false;const times=visibleEvents().map(e=>e.peak_s);
+function selectCluster(id){if(state.recording)return;
+  if(id&&state.baseScene?.cluster_scenes?.[id]){state.scene={...state.baseScene,...state.baseScene.cluster_scenes[id]};measureScene();
+    $('electrode-count').textContent=state.scene.electrodes.length;$('lead-count').textContent=state.scene.depth_electrodes.length}
+  state.selectedCluster=id;state.selectedRoute=null;state.playing=false;const times=visibleEvents().map(e=>e.peak_s);
   let first=times.length?times.reduce((a,b)=>Math.min(a,b),Infinity):0,last=times.length?times.reduce((a,b)=>Math.max(a,b),-Infinity):1;
   state.min=id?Math.max(0,first-.06):Math.min(first,0);state.max=id?last+.12:Math.max(last,1);if(state.max-state.min<.2)state.max=state.min+.2;state.time=state.min;
   $('timeline').min=state.min;$('timeline').max=state.max;$('range-label').textContent=`${formatTime(state.min)}  —  ${formatTime(state.max)}`;
@@ -105,13 +108,15 @@ function saveClusterVideo(){if(!state.selectedCluster||!window.MediaRecorder||!H
 }
 function setupUi(){const scene=state.scene;$('source-label').textContent=scene.source_label;$('electrode-count').textContent=scene.electrodes.length;$('lead-count').textContent=(scene.depth_electrodes||[]).length||'—';
   $('window-label').textContent=`${scene.settings.min_delay_ms}–${scene.settings.max_delay_ms} MS`;if(scene.demo)$('speed').value='0.1';
-  if(scene.demo)document.querySelector('.method-note').textContent='Demo fibers are schematic. Each cluster shows one origin event with five direct target events.';
+  if(scene.demo)document.querySelector('.method-note').textContent='HCP1065 atlas streamlines. Each cluster is a separate representative left-sided implantation with one source and five direct targets.';
   if(scene.clusters?.length){$('cluster-section').hidden=false;const holder=$('clusters');for(const cluster of scene.clusters){const button=document.createElement('button');button.className='cluster';button.dataset.clusterId=cluster.id;button.textContent=cluster.title;const detail=document.createElement('small');detail.textContent=`${cluster.source_label} → 5 targets`;button.append(detail);button.onclick=()=>selectCluster(cluster.id);holder.append(button)}selectCluster(scene.clusters[0].id)}else selectCluster(null);
   $('export-video').onclick=saveClusterVideo;$('play').onclick=()=>{if(state.time>=state.max)state.time=state.min;state.playing=!state.playing};$('timeline').oninput=e=>{state.time=Number(e.target.value);state.playing=false};$('reset-view').onclick=()=>{state.yaw=-.52;state.pitch=.17;state.zoom=1};
 }
 let dragging=false,lastX=0,lastY=0;overlay.addEventListener('pointerdown',e=>{dragging=true;lastX=e.clientX;lastY=e.clientY;overlay.setPointerCapture(e.pointerId)});overlay.addEventListener('pointermove',e=>{if(!dragging)return;state.yaw+=(e.clientX-lastX)*.008;state.pitch=Math.max(-1.35,Math.min(1.35,state.pitch+(e.clientY-lastY)*.008));lastX=e.clientX;lastY=e.clientY});overlay.addEventListener('pointerup',()=>dragging=false);overlay.addEventListener('wheel',e=>{e.preventDefault();state.zoom=Math.max(.55,Math.min(2.8,state.zoom*Math.exp(-e.deltaY*.001)))},{passive:false});
 window.addEventListener('resize',resize);
-fetch('/scene.json').then(r=>{if(!r.ok)throw Error(`Scene request failed: ${r.status}`);return r.json()}).then(scene=>{state.scene=scene;measureScene();buildBrain();setupUi();resize();requestAnimationFrame(frame)}).catch(err=>{$('candidates').textContent=err.message;console.error(err)});
+fetch('/scene.json').then(r=>{if(!r.ok)throw Error(`Scene request failed: ${r.status}`);return r.json()}).then(scene=>{state.baseScene=scene;state.scene=scene;measureScene();buildBrain();setupUi();resize();requestAnimationFrame(frame)}).catch(err=>{$('candidates').textContent=err.message;console.error(err)});
+
+
 
 
 
