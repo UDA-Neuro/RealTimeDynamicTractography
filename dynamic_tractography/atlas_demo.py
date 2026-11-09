@@ -33,6 +33,10 @@ def _atlas_path(path: Path | None) -> Path:
         return path
     cache = Path.home() / ".cache" / "dynamic_tractography"
     cache.mkdir(parents=True, exist_ok=True)
+    selected = cache / "hcp1065_left"
+    if all((selected / f"{name}_L.trk.gz").is_file()
+           for name in ("ILF", "IFOF", "AF", "UF")):
+        return selected
     archive = cache / "hcp1065_avg_tracts_trk.zip"
     if not archive.exists():
         temporary = archive.with_suffix(".download")
