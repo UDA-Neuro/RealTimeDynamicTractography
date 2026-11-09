@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from hashlib import sha256
 from pathlib import Path
 import re
 from urllib.request import urlretrieve
@@ -189,7 +190,9 @@ def _source(bundles: dict, mask: np.ndarray, inverse: np.ndarray):
 
 def atlas_demo_scene(atlas_path: Path | None = None) -> dict:
     atlas_path = _atlas_path(atlas_path)
-    cache_dir = Path.home() / ".cache" / "dynamic_tractography" / "selected_tracts"
+    stat = atlas_path.stat()
+    cache_key = sha256(f"{atlas_path.resolve()}:{stat.st_size}:{stat.st_mtime_ns}".encode()).hexdigest()[:12]
+    cache_dir = Path.home() / ".cache" / "dynamic_tractography" / cache_key
     bundles = _load_bundles(atlas_path, cache_dir)
     surfaces, mask, affine = _standard_brain()
     inverse = np.linalg.inv(affine)
