@@ -45,16 +45,21 @@ class SceneTests(unittest.TestCase):
             self.assertEqual(len(scene["depth_electrodes"]), 10)
             self.assertEqual(len(scene["electrodes"]), 60)
             self.assertEqual(len(scene["clusters"]), 4)
-            self.assertEqual(len(scene["propagations"]), 20)
-            self.assertTrue(all(lead["hemi"] == "lh" and lead["path"][-1][0] < -10
-                                for lead in scene["depth_electrodes"]))
-            for lead in scene["depth_electrodes"]:
-                entry, tip = np.asarray(lead["path"])
-                self.assertGreater(tip[0], entry[0])
-                np.testing.assert_allclose(tip[1:], entry[1:])
-            for route in scene["tracts"]:
-                self.assertTrue(any(np.min(np.linalg.norm(line[:, None, :] - np.asarray(route)[None, :, :], axis=2), axis=0).max() < .03
-                                    for line in all_lines))
+            self.assertEqual(sum(len(s["propagations"]) for s in scene["cluster_scenes"].values()), 20)
+            self.assertEqual({p["bundle"] for s in scene["cluster_scenes"].values()
+                              for p in s["propagations"]}, {"TEMPORAL", "IFOF", "ARCUATE", "UNCINATE"})
+            for cluster in scene["cluster_scenes"].values():
+                self.assertEqual(len(cluster["depth_electrodes"]), 10)
+                self.assertEqual(len(cluster["electrodes"]), 60)
+                self.assertTrue(all(lead["hemi"] == "lh" and lead["path"][-1][0] < -10
+                                    for lead in cluster["depth_electrodes"]))
+                for lead in cluster["depth_electrodes"]:
+                    entry, tip = np.asarray(lead["path"])
+                    self.assertGreater(tip[0], entry[0])
+                    np.testing.assert_allclose(tip[1:], entry[1:])
+                for route in cluster["tracts"]:
+                    self.assertTrue(any(np.min(np.linalg.norm(line[:, None, :] - np.asarray(route)[None, :, :], axis=2), axis=0).max() < .03
+                                        for line in all_lines))
 
     def test_time_and_tract_both_required(self):
         contacts = [{"channel_number": 1, "xyz": [0, 0, 0]},
