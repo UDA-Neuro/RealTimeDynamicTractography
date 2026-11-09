@@ -13,7 +13,7 @@ py -3.12 -m venv "$HOME\.venv"
 & "$HOME\.venv\Scripts\python.exe" -m dynamic_tractography --demo
 ```
 
-The first run downloads and caches the HCP1065 TRK atlas (about 588 MB). To use an existing download:
+If the atlas is not cached, the first run downloads the HCP1065 TRK atlas (about 588 MB). To use an existing download:
 
 ```powershell
 & "$HOME\.venv\Scripts\python.exe" -m dynamic_tractography --demo --demo-atlas 'D:\data\hcp1065_avg_tracts_trk.zip'
